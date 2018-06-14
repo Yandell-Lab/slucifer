@@ -1,0 +1,656 @@
+#!/usr/bin/perl -w 
+use strict;
+
+use Getopt::Std;
+use vars qw($opt_h $opt_t $opt_m $opt_c $opt_q $opt_d $opt_o $opt_s $opt_x);
+getopts('h:t:q:d:o:s:m:x:c:');
+
+
+$| = 1;
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use PostData;
+use FileHandle;
+use Bio::SearchIO;
+use Bio::Search::Hit::HitFactory;
+use Bio::Search::HSP::HSPFactory;
+use Blasto_GenericHsp;
+use Math::Round;
+use constant e  => exp(1);
+
+my $usage = "
+
+blasto: blast offroad. Search for very distant homologies.
+
+OPTIONS: -t [blast type, e.g. blastp, blastn, blastx, tblastn] 
+	 -m [d|o] Mode. d = default blast search; o = offroad  mode.
+	 -q query fasta file 
+	 -d database
+	 -o name for outfile
+	 -s effective search space
+	 -x matrix. BLOSUM45,BLOSUM62,BLOSUM80, or BLOSUM90.	  
+	 -c [1 or more] delete nested hsps w/in hit after -c events.
+	 -h [n]. Recommended values are between 0.1 and 10. 1 is default. Turn up to 
+                 supress sum statistics. Turn down to encourage.
+
+WRTES to STDOUT
+
+USAGE: blasto -t blastp -m [d|o] -h <n> -s <search space> -x <matrix> -c <n> -q <q.fasta> -d <db -o <blast out>
+
+EXAMPLE: bin/blasto -t blastp -m o -h 2 -s 256000  -x BLOSUM45 -c 1 -q test5.fasta -d Conotoxin_all_signal_removed.txt -o foo > eee 
+
+Some useful commands:
+
+makeblastdb -dbtype prot -in uniref90.fasta -parse_seqids
+
+blastp -num_descriptions 10000 -num_alignments 10000 -query bmp4.fasta 
+       -db db/uniref90.fasta -evalue 0.0001 -seg yes -soft_masking true
+       -out bmp4.fasta.blastp
+
+blastdbcmd -dbtype prot -entry 'UniRef90_E3TA20' -db db/uniref90.fasta
+
+\n"; 
+
+#-----------------------------------------------------------------------------
+#----------------------------------- MAIN ------------------------------------
+#-----------------------------------------------------------------------------
+
+my $BLAST_DIR = '/usr/local/ncbi-blast-2.7.1+/bin';
+
+my $QUERY_NAME;
+my $EXP_HSP_BITS;
+my $EXP_HSP_LEN;
+my %STATS;
+my @BARGS;
+
+#die $usage unless -e $REPORT;
+die $usage unless $opt_t;
+
+run_blast();
+
+my $REPORT = $opt_o;
+
+my @KEEPERS;
+
+my $hspType = 'Blasto_GenericHsp';
+
+my $hspFactory = new Bio::Search::HSP::HSPFactory(-type =>$hspType);
+
+my $SIO = new Bio::SearchIO(-format => 'blast',
+	                    -file   => $REPORT,
+			   );
+
+$SIO->_eventHandler->register_factory('hsp', $hspFactory);
+
+$opt_x = 'BLOSUM62' unless $opt_x;
+$opt_h = 1 unless $opt_h;
+
+show_hits();
+
+
+print STDERR "$REPORT is completed!\n"; 
+#-----------------------------------------------------------------------------
+#---------------------------------- SUBS -------------------------------------
+#-----------------------------------------------------------------------------
+sub run_blast {
+
+	my $args = get_args();
+ 
+	system("$BLAST_DIR/$opt_t $args");
+
+	return $opt_o;
+
+}
+#-----------------------------------------------------------------------------
+sub get_args {
+
+	push(@BARGS, "-query $opt_q");
+	push(@BARGS, "-db $opt_d");
+	push(@BARGS, "-out $opt_o");
+
+	return join(' ', @BARGS) if $opt_m eq 'd';
+
+	my $go = get_gap_open();
+	my $ge = get_gap_ext();
+	
+	push(@BARGS, "-evalue 1000");
+	push(@BARGS, "-word_size 2");
+	push(@BARGS, "-gapopen $go");
+	push(@BARGS, "-gapextend $ge");
+	push(@BARGS, "-window_size 0");
+	push(@BARGS, "-threshold 4");
+	push(@BARGS, "-matrix $opt_x");
+	push(@BARGS, "-xdrop_gap_final 1");
+	push(@BARGS, "-xdrop_gap 1");
+	push(@BARGS, "-xdrop_ungap 1");
+	#push(@BARGS, "-culling_limit 100");
+	push(@BARGS, "-searchsp $opt_s") if $opt_s;
+	#push(@BARGS, "-comp_based_stats 0");
+	#push(@BARGS, "-use_sw_tback");
+	push(@BARGS, "-seg yes");
+	push(@BARGS, "-soft_masking true");
+
+	return join(' ', @BARGS);
+}
+#-----------------------------------------------------------------------------
+sub get_gap_open {
+
+	if    ($opt_x eq 'BLOSUM45'){
+		return 16;
+	}
+	elsif ($opt_x eq 'BLOSUM62'){
+		return 9;
+	}
+	elsif ($opt_x eq 'BLOSUM80'){
+		return 9;
+	}
+	elsif ($opt_x eq 'BLOSUM90'){
+		return 9;
+	}
+	else {
+		die "unknown matrix:$opt_x\n";
+	}
+}
+#-----------------------------------------------------------------------------
+sub get_gap_ext {
+
+        if    ($opt_x eq 'BLOSUM45'){
+                return 1;
+        }
+        elsif ($opt_x eq 'BLOSUM62'){
+		return 1;
+        }
+        elsif ($opt_x eq 'BLOSUM80'){
+		return 1;
+        }
+        elsif ($opt_x eq 'BLOSUM90'){
+		return 1;
+        }
+        else {
+                die "unknown matrix:$opt_x\n";
+        }
+}
+#-----------------------------------------------------------------------------
+
+sub denoise {
+
+	my $hit = shift;
+
+	my @hsps;
+        foreach my $hsp ($hit->hsps){
+
+		next if  $hsp->bits < $EXP_HSP_BITS;
+
+        	push(@hsps, $hsp);
+        }
+
+        delete $hit->{_hsps};
+
+	for (my $i = 0; $i < @hsps; $i++){
+		$hit->add_hsp($hsps[$i]); 
+	}
+}
+#-----------------------------------------------------------------------------
+sub cull_hit {
+
+        my $hit       = shift;
+	my $type      = shift;
+        my $threshold = shift;
+
+        my @hsps;
+        foreach my $hsp ($hit->hsps){
+                
+                push(@hsps, $hsp);
+        }
+        
+        my %cull;
+        for (my $i = 0; $i < @hsps; $i++){
+                
+                for (my $j = 0; $j < @hsps; $j++){
+                        
+                        next if $i == $j;
+                        
+                        $cull{$j}++ if is_within($hsps[$i], $hsps[$j], $type);
+                }
+        }
+        
+        delete $hit->{_hsps};
+        
+        for (my $i = 0; $i < @hsps; $i++){
+
+		my $j = exists $cull{$i} ? $cull{$i} : 0;
+
+                $hit->add_hsp($hsps[$i]) unless cull_hsp($j, $threshold);
+        }
+}
+#-----------------------------------------------------------------------------
+sub cull_hsp {
+	my $i = shift;
+	my $t = shift;
+
+	return 1 if $i >= $t;
+
+	return 0;
+}
+#-----------------------------------------------------------------------------
+sub is_within {
+
+	my $ihsp = shift;
+	my $jhsp = shift;
+	my $type = shift;
+
+        my $ib = $ihsp->start($type);
+        my $ie = $ihsp->end($type);
+        my $is = $ihsp->strand($type);
+
+        my $jb = $jhsp->start($type);
+        my $je = $jhsp->end($type);
+        my $js = $jhsp->strand($type);
+
+	return 0 unless $is eq $js;
+
+	return 0 unless $jb >= $ib && $je <= $ie;
+
+	return 0 unless $ihsp->bits() > $jhsp->bits();
+
+	return 1;
+}
+#-----------------------------------------------------------------------------
+sub show_hits {
+
+	my $i = 0;
+
+	while(my $r = $SIO->next_result) {
+
+		$QUERY_NAME = $r->query_name();
+
+		load_stats($r, $i);
+
+        	while( my $hit = $r->next_hit ) {
+
+			$EXP_HSP_BITS = get_min_hsp_bits($hit);
+
+			denoise($hit);
+
+			cull_hit($hit, 'query', $opt_c) if $opt_c;
+			cull_hit($hit, 'hit', $opt_c)   if $opt_c;
+
+			next unless $hit->hsps();
+
+			next unless get_total_bits($hit) > $EXP_HSP_BITS;
+
+                	push(@KEEPERS, $hit);
+
+			$i++;
+        	}
+    	}
+
+	my @sorted = sort {get_indE($a) <=> get_indE($b)} @KEEPERS;
+
+	$i = 0;
+
+	print_header(\@sorted);
+
+        foreach my $hit (@sorted){
+		show_hit($hit, $i);
+		$i++;
+       }
+	
+	print_footer();
+}
+#-----------------------------------------------------------------------------
+sub print_header {
+	
+	my $hits = shift;
+
+	my $link = 'DRIVE SAFELY!';
+
+	my @head;
+        push(@head, '#'.'-'x(80));
+        push(@head,'#'.' 'x(36).' BLASTO');
+	push(@head, '#'. ' 'x(34).$link);
+        push(@head, '#'.'-'x(80));
+
+        print join("\n", @head)."\n\n";
+
+	print "QUERY:$QUERY_NAME\n\n";
+
+	my @top;
+
+	push(@top, fmt(' ',20));
+	push(@top, fmt('RANK',6));
+	push(@top, fmt('SOLO Exp',10));
+	push(@top, fmt('SUM Exp', 10));
+	push(@top, fmt('BLAST Exp',10));
+
+	print join("\t", @top)."\n";
+
+	my $i = 0;
+	foreach my $hit (@{$hits}){
+
+		my @data;
+		push(@data, substr($hit->name(),0,20).'...');
+		push(@data, fmt($i,6));
+		push(@data, fmt(prune(get_indE($hit),5),10));
+		push(@data, fmt(prune(get_sumE($hit),5),10));
+		push(@data, prune($hit->significance(),5));
+		print join("\t", @data)."\n";
+
+		$i++;
+	}
+	
+	print "\n";	
+}
+#-----------------------------------------------------------------------------
+sub print_footer {
+
+	my @foot;
+	push(@foot, '#'.'-'x(80));
+	push(@foot,' 'x(38).' FOOTER');
+	push(@foot, '#'.'-'x(80));
+
+	print join("\n", @foot)."\n";
+
+	my @data;
+	
+	push(@data, 'TYPE:'.$opt_t);
+	push(@data, 'QUERY:'.$opt_q);
+	push(@data, 'QUERY NAME:'.$QUERY_NAME);
+
+	foreach my $e (sort {$a cmp $b} @BARGS){
+		push(@data, $e);
+	}
+
+	foreach my $key (sort keys %{$STATS{0}}){
+		push(@data, $key."\t".$STATS{0}{$key});
+	}
+
+	push(@data, 'MATRIX:'.$opt_x);
+	push(@data, 'MODE:'.$opt_m);
+	push(@data, 'CULL_HSP:'.$opt_c) if $opt_c;
+	
+	
+	push(@data, '#END'.'-'x(77));
+
+	print join("\n", @data)."\n";
+
+}
+#-----------------------------------------------------------------------------
+sub load_stats {
+
+	my $r = shift;
+	my $i = shift;
+
+	my @keys = $r->available_statistics();
+
+	foreach my $k (@keys){
+		$STATS{$i}{$k} = $r->get_statistic($k);
+	}
+
+}
+#-----------------------------------------------------------------------------
+sub print_hsp {
+
+	my $hsp      = shift;
+	my $hit_name = shift;
+
+	my @q;
+	my @s;
+
+	my $exp = $hsp->evalue();
+
+	push(@q, $hsp->start('query'));
+	push(@q, $hsp->query_string()); 
+	push(@q, $hsp->end('query'));	
+	push(@q, substr($QUERY_NAME,0,20));
+
+        push(@s, $hsp->start('hit'));
+        push(@s, $hsp->hit_string());
+        push(@s, $hsp->end('hit'));  
+	push(@s, substr($hit_name, 0, 20));
+
+	print join("\t", @q)."\n";
+	print "\t".$hsp->homology_string()."\t\t".$hsp->bits." bits E:".$exp."\n";
+	print join("\t", @s)."\n";
+	print "\n";
+
+}
+#-----------------------------------------------------------------------------
+sub get_min_hsp_bits {
+
+	my $hit = shift;
+	
+	my $s = $STATS{0}{effectivespaceused};
+        my $m = $hit->query_length();
+	my $n = $STATS{0}{dbletters};
+        my $l = $STATS{0}{dbentries};
+        my $k = $STATS{0}{kappa};
+
+	return log($s) if $opt_s;
+
+	return log($k*$m*$n);
+}
+#-----------------------------------------------------------------------------
+sub get_total_bits {
+
+        my $hit = shift;
+
+        my $k = $STATS{0}{kappa};
+
+        my $sum;
+        foreach my $hsp ($hit->hsps){
+                $sum += $hsp->bits();
+        }
+
+        return $sum;
+}
+#-----------------------------------------------------------------------------
+sub get_adj_bits {
+
+        my $hit = shift;
+
+	my $h = $STATS{0}{entropy};
+
+        my $tot = get_total_bits($hit);
+
+        my $num_hsps = $hit->hsps();
+	   $num_hsps--;
+
+	return $tot if $opt_m eq 'd';
+
+        my $sum = $tot - $num_hsps*$EXP_HSP_BITS - $num_hsps*$h*$opt_h;  
+
+        return $sum > $hit->bits() ? $sum : $hit->bits();
+}
+#-----------------------------------------------------------------------------
+sub get_indE {
+
+        my $hit = shift;
+
+        my $h = $STATS{0}{entropy};
+        my $s = $hit->query_length()*$hit->length();
+        my $m = $hit->query_length();
+        my $n = $hit->length();
+        my $l = $STATS{0}{dbentries};
+        my $k = $STATS{0}{kappa};
+
+	cull_hit($hit, 'hit', 1);
+
+        my $adj = get_adj_bits($hit);
+        
+	my $num_hsps = $hit->hsps();
+
+	my $ehl = $k*$m*$n;
+
+        my $m_prime = $m - $ehl;
+           $m_prime = int(1/$k) if $m_prime < $ehl + 1;
+
+	my $n_prime = $n - $ehl;
+	   $n_prime = int(1/$k) if $n_prime < $ehl + 1;
+
+
+        return ($m_prime*$n_prime)*(2**-$adj);
+
+}
+#-----------------------------------------------------------------------------
+sub get_sumE {
+
+	my $hit = shift;
+
+	my $h = $STATS{0}{entropy};
+        my $s = $STATS{0}{effectivespaceused};
+        my $m = $hit->query_length();
+        my $n = $STATS{0}{dbletters};
+        my $l = $STATS{0}{dbentries};
+        my $k = $STATS{0}{kappa};
+
+	my $adj = get_adj_bits($hit);
+
+	$EXP_HSP_LEN = int(log($k*$m*$n)/$h);
+
+	return $hit->significance() if $opt_m eq 'd';
+
+	return $s*(2**-$adj) if $opt_s;
+
+	my $m_prime = $m - $EXP_HSP_LEN;
+	   $m_prime = int(1/$k) if $m_prime < $EXP_HSP_LEN + 1;
+
+	my $n_prime = $n - $l*$EXP_HSP_LEN;
+
+	return ($m_prime*$n_prime)*(2**-$adj); 
+	
+}
+#-----------------------------------------------------------------------------
+sub show_hit {
+
+	my $hit = shift;
+	my $i   = shift;
+
+	my $hit_name = $hit->name();
+
+	my $sumE = prune(get_sumE($hit));
+	my $indE = prune(get_indE($hit));
+ 
+	my $sum = get_total_bits($hit);
+	my $adj = get_adj_bits($hit);
+
+	my @head;
+
+	push(@head, '#'.'-'x(80));
+	push(@head, '# '.'>'.substr($hit_name,0,78));	
+	push(@head, '#'.'-'x(80));
+	push(@head, 'I:'.$i);
+	push(@head, 'SBJCT LENGTH:'.$hit->length());
+	push(@head, 'NUM HSPS:'.$hit->hsps());
+
+	my @facts;
+
+	push(@facts, 'SOLO EXPECT:'.prune($indE));
+	push(@facts, 'SUM EXPECT:'.prune($sumE));
+	push(@facts, 'TOTAL BITS:'.$sum);
+	push(@facts, 'ADJ BITS:'.prune($adj));
+
+	print join("\n", @head)."\n\n";
+
+	print join("\t", @facts)."\n\n";
+
+	my @hsps = sort {$a->start('query') <=> $b->start('query')} $hit->hsps;
+
+        while(my $hsp = shift @hsps) {
+		print_hsp($hsp, $hit_name);
+        }
+
+	my @foot;
+
+	push(@foot, 'EXP_HSP_BITS:'.Math::Round::nearest(0.1,$EXP_HSP_BITS));
+	push(@foot, 'EXP_HSP_LENGTH:'.$EXP_HSP_LEN);
+
+	print join("\n", @foot)."\n\n";
+}
+#-----------------------------------------------------------------------------
+sub prune {
+
+        my $v = shift;
+        my $l = shift;
+
+        $l = 3 unless defined $l;
+
+        my $pruned;
+        if ($v =~ /e/){
+                my ($x, $y, $z) = $v =~ /(\d)\.?(\d*)(e[\-\+]\d+)$/;
+
+                die "failure in sub prune_precision: $v $x $y $z\n"
+                unless defined $x && defined $y && defined $z;
+
+                $y = substr($y, 0, $l - 1);
+
+                #$pruned = $x.'.'.$y.$z;
+
+                $pruned = $x.'.'.$y;
+
+                my $extra = ($l + 5 - length($z)) - length($pruned);
+
+                $pruned = $pruned.'0'x$extra;
+
+                $pruned = $pruned.$z;
+        }
+	elsif ($v =~ /[^0]\.\d+/){
+		my ($x, $y) = $v =~ /(\d+)\.(\d+)/;
+
+		$y = substr($y,0,$l);
+
+		$pruned = $x.'.'.$y;
+	}
+        else {
+                $pruned = substr($v, 0, $l + 5);
+
+                my $extra = ($l + 5) - length($pruned);
+
+                $pruned = $pruned =~ /\./ ? $pruned.'0'x$extra
+                                          : $pruned.'.'.'0'x($extra - 1);
+        }
+
+
+        $pruned = 0 if $pruned =~ /^0\.0+$/;
+        $pruned = 0 if $pruned =~ /^0\.$/;
+
+        $pruned = $pruned.'.'.'0'x$l if $pruned =~ /^0$/;
+
+        return $pruned;
+}
+#-------------------------------------------------------------------------------
+sub fmt {
+        my $s   = shift;
+        my $max = shift;
+
+        $max = 13 unless $max;
+
+        if ($s =~ /\-?\d+\.\d*e[\-\+]\d+$/){
+                my $sign = $s > 0 ? 1 : -1;
+                my ($a, $b) = $s =~ /\-?(\d+)\.\d*(e[\-\+]\d+)$/;
+
+                $s *= $sign;
+                $s = $a.$b;
+        }
+
+        my $l = length($s);
+
+        my $c = $max - $l;
+
+        if ($l >= $max){
+                return substr($s, 0, $max);
+        }
+        else {
+                return $s." "x($c)
+        }
+}
+#-----------------------------------------------------------------------------
+
+
+
+
+
+
+
+
