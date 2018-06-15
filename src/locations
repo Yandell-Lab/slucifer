@@ -1,0 +1,9 @@
+##PACKAGE
+$data = {
+    'blast'        => {'Linux_x86_64'  => 'ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.2.28/ncbi-blast-2.2.28+-x64-linux.tar.gz',
+		       'Linux_i386'    => 'ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.2.28/ncbi-blast-2.2.28+-ia32-linux.tar.gz',
+		       'Darwin_i386'   => 'ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.2.28/ncbi-blast-2.2.28+-universal-macosx.tar.gz',
+		       'Darwin_x86_64' => 'ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.2.28/ncbi-blast-2.2.28+-universal-macosx.tar.gz',
+		       'src_'          => 'ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.2.28/ncbi-blast-2.2.28+-src.tar.gz',
+		   },
+};
