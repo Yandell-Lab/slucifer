@@ -12,6 +12,7 @@ use lib "$FindBin::Bin/../lib";
 
 use PostData;
 use FileHandle;
+use File::Which;
 use Bio::SearchIO;
 use Bio::Search::Hit::HitFactory;
 use Bio::Search::HSP::HSPFactory;
