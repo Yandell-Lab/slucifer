@@ -38,7 +38,7 @@ my $build = App::Build->new(
 	#'Other::Module' => '>= 1.2, != 1.5, < 2.0',
     },
     exe_requires => {
-        'BLAST+' => 'makeblastdb',
+        'BLAST' => 'makeblastdb',
     },
     build_requires => {
     },

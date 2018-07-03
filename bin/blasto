@@ -56,7 +56,7 @@ blastdbcmd -dbtype prot -entry 'UniRef90_E3TA20' -db db/uniref90.fasta
 #----------------------------------- MAIN ------------------------------------
 #-----------------------------------------------------------------------------
 
-my $BLAST_DIR = '/usr/local/ncbi-blast-2.7.1+/bin';
+my $BLAST_DIR = get_blast_dir();
 
 my $QUERY_NAME;
 my $EXP_HSP_BITS;
@@ -92,6 +92,22 @@ show_hits();
 print STDERR "$REPORT is completed!\n"; 
 #-----------------------------------------------------------------------------
 #---------------------------------- SUBS -------------------------------------
+#-----------------------------------------------------------------------------
+sub get_blast_dir {
+    if($ENV{BLAST_DIR} && -f "$ENV{BLAST_DIR}/makeblastdb"){
+	return $ENV{BLAST_DIR};
+    }
+    if(my ($exe) = <$FindBin::Bin/../exe/*/bin/makeblastdb>){
+	$exe =~ s/[^\/]+$//;
+	return $exe;
+    }
+    if(my $exe = File::Which::which('makeblastdb')){
+	$exe =~ s/[^\/]+$//;
+	return $exe;
+    }
+
+    die "ERROR: Cannot find BLAST+\n";
+}
 #-----------------------------------------------------------------------------
 sub run_blast {
 
