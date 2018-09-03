@@ -2,8 +2,8 @@
 use strict;
 
 use Getopt::Std;
-use vars qw($opt_h $opt_t $opt_m $opt_c $opt_q $opt_d $opt_o $opt_s $opt_x);
-getopts('h:t:q:d:o:s:m:x:c:');
+use vars qw($opt_a $opt_h $opt_t $opt_m $opt_c $opt_q $opt_d $opt_o $opt_s $opt_x);
+getopts('h:t:q:d:o:s:m:x:c:a');
 
 
 $| = 1;
@@ -18,6 +18,9 @@ use Bio::Search::Hit::HitFactory;
 use Bio::Search::HSP::HSPFactory;
 use Blasto_GenericHsp;
 use Math::Round;
+use Term::ANSIColor;
+
+
 use constant e  => exp(1);
 
 my $usage = "
@@ -34,6 +37,9 @@ OPTIONS: -t [blast type, e.g. blastp, blastn, blastx, tblastn]
 	 -c [1 or more] delete nested hsps w/in hit after -c events.
 	 -h [n]. Recommended values are between 0.1 and 10. 1 is default. Turn up to 
                  supress sum statistics. Turn down to encourage.
+	 -a color red all aligned posistions on the query and hit. Note when viewing
+            the file you will want to use the unix commands more or less with the -R
+            option, e.e. > more -R <file>
 
 WRTES to STDOUT
 
@@ -58,6 +64,7 @@ blastdbcmd -dbtype prot -entry 'UniRef90_E3TA20' -db db/uniref90.fasta
 #-----------------------------------------------------------------------------
 
 my $BLAST_DIR = get_blast_dir();
+my $BLASTDBCMD = '/usr/local/ncbi-blast-2.7.1+/bin/blastdbcmd';
 
 my $QUERY_NAME;
 my $EXP_HSP_BITS;
@@ -539,6 +546,72 @@ sub get_sumE {
 	
 }
 #-----------------------------------------------------------------------------
+sub get_query_fasta {
+
+
+	my $fh = new FileHandle();
+	   $fh->open($opt_q);
+
+	my $fasta;
+	while(defined(my $line = <$fh>)){
+		$fasta .= $line;
+	}
+	$fh->close();
+
+	return $fasta;
+}
+#-----------------------------------------------------------------------------
+sub fetch_seq {
+
+	my $type = shift;
+        my $hit  = shift;
+
+	my $id = $hit->accession();
+
+	my $fasta;
+	if ($type eq 'h'){
+       		$fasta = `$BLASTDBCMD -dbtype prot -entry $id -db $opt_d`;
+
+	}
+	else {
+		$fasta = get_query_fasta();
+	}
+
+	my @lines = split(/\n/, $fasta);
+
+	my $def = shift(@lines);
+	my $seq = join("", @lines);
+	   $seq = lc($seq);
+
+	my @hsps = $hit->hsps;
+
+	foreach my $hsp (@hsps){
+		my $string =  $type eq 'h'? $hsp->hit_string() 
+		                          : $hsp->query_string();
+		   $string =~ s/\-//g;
+
+		   my $uc = uc($string);  
+		   my $lc = lc($string);	
+		
+		   $seq =~ s/$lc/$uc/gi;
+	}	
+
+	return format_seq($seq, 80);
+}
+#-----------------------------------------------------------------------------
+sub format_seq {
+
+	my $s = shift;
+	my $w = shift;    
+
+        my $seq;
+        for (my $i = 0; $i < length($s); $i += $w){
+                $seq .= substr($s, $i, $w)."\n";
+        }
+
+        return $seq;
+}
+#-----------------------------------------------------------------------------
 sub show_hit {
 
 	my $hit = shift;
@@ -555,7 +628,7 @@ sub show_hit {
 	my @head;
 
 	push(@head, '#'.'-'x(80));
-	push(@head, '# '.'>'.substr($hit_name,0,78));	
+	push(@head, '# '.'>'.$hit_name);	
 	push(@head, '#'.'-'x(80));
 	push(@head, 'I:'.$i);
 	push(@head, 'SBJCT LENGTH:'.$hit->length());
@@ -584,6 +657,45 @@ sub show_hit {
 	push(@foot, 'EXP_HSP_LENGTH:'.$EXP_HSP_LEN);
 
 	print join("\n", @foot)."\n\n";
+
+	my $query_seq = fetch_seq('q', $hit);
+	my $hit_seq   = fetch_seq('h', $hit);
+
+	print "QUERY SEQ\n";
+	print_seq($query_seq);
+
+	print "HIT SEQ\n";
+	print_seq( $hit_seq);
+}
+#-----------------------------------------------------------------------------
+sub print_seq {
+	my $seq = shift;
+
+	if ($opt_a){
+
+		chomp($seq);
+
+		my @chars = split('', $seq);
+
+		while (defined(my $c = shift(@chars))){
+		
+			if ($c =~ /[A-Z]/){
+				print color('bold red');
+
+				print $c;
+			}
+			else {
+				print $c;
+			}
+
+			print color('reset');
+		}
+
+		print "\n";
+	}
+	else {
+		print $seq;
+	}
 }
 #-----------------------------------------------------------------------------
 sub prune {
