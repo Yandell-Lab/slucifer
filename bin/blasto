@@ -39,7 +39,7 @@ OPTIONS: -t [blast type, e.g. blastp, blastn, blastx, tblastn]
                  supress sum statistics. Turn down to encourage.
 	 -a color red all aligned posistions on the query and hit. Note when viewing
             the file you will want to use the unix commands more or less with the -R
-            option, e.e. > more -R <file>
+            option, e.g. > more -R <file>
 
 WRTES to STDOUT
 
@@ -636,8 +636,9 @@ sub show_hit {
 
 	my @facts;
 
-	push(@facts, 'SOLO EXPECT:'.prune($indE));
-	push(@facts, 'SUM EXPECT:'.prune($sumE));
+	push(@facts, 'SOLO E:'.prune($indE));
+	push(@facts, 'SUM E:'.prune($sumE));
+	push(@facts, 'BLAST E:'.prune($hit->significance()));
 	push(@facts, 'TOTAL BITS:'.$sum);
 	push(@facts, 'ADJ BITS:'.prune($adj));
 
