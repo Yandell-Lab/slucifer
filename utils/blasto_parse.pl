@@ -8,10 +8,13 @@ use strict;
 use Carp;
 use Getopt::Long;
 
-my $VERSION = "1.0";
+my $VERSION = "1.1";
 my $SCRIPTNAME = "blasto_parse.pl";
 my $CHANGELOG = "
 #  v1.0 = 14 Dec 2018
+#  v1.1 = 07 Jan 2019
+#         Bug fix: query ID was subject ID and the Subject_Name was the query name
+#         Added in tab: alignment sequence & cystein count
 \n";
 
 my $USAGE = "\nUsage [$VERSION]: 
@@ -81,11 +84,11 @@ prep_out();
 
 #Now load
 print STDERR " --- Parsing files...\n" if ($V);
-open (my $FHT, ">>", $OUT.".tab") or confess "     \nERROR (sub parse_blasto) Failed to open to write $OUT.tab $!\n" if ($FMT ne "f");
-open (my $FHF, ">", $OUT.".fasta") or confess "     \nERROR (sub parse_blasto) Failed to open to write $OUT.fasta $!\n" if ($FMT ne "t");
+open (my $FHT, ">>", $OUT.".tab") or confess "     \nERROR - Failed to open to write $OUT.tab $!\n" if ($FMT ne "f");
+open (my $FHF, ">", $OUT.".fasta") or confess "     \nERROR - Failed to open to write $OUT.fasta $!\n" if ($FMT ne "t");
 foreach my $f (@FILES) {
 	chomp $f;
-	print STDERR "     - $f\n";
+	print STDERR "     - $f\n" if ($V);
 #	load_footer($f); #implement that later
 	parse_blasto($f);
 }	
@@ -148,7 +151,7 @@ sub prep_out {
 		open (my $fht, ">", $OUT.".tab") or confess "     \nERROR (sub get_files) Failed to open to write $OUT.tab $!\n";
 		print $fht "#FILE\tQUERY_ID\tQUERY_SEQ\tQUERY_LENGTH\tHIT_RANK\tNUM_HSPS";
 		print $fht "\tSOLO_E\tSUM_E\tBLAST_E\tTOTAL_BITS\tADJ_BITS";
-		print $fht "\tSUBJECT_NAME\tSUBJECT_SEQUENCE";
+		print $fht "\tSUBJECT_NAME\tSUBJECT_SEQUENCE\tALIGNMENT\tNUMBER_CYSTEINS";
 		print $fht "\n";
 		close $fht;
 	}
@@ -174,9 +177,9 @@ sub parse_blasto {
 			
 		#PARSING
 		#new block
-		if ($l =~ /^# >.+?$/) {
+		if ($l =~ /^# >.+?$/) {	
 			#print previous data if any
-			print_stuff(\%d,$f) if ($d{'id'});
+			print_stuff(\%d,$f) if ($d{'qid'});			
 			#reset hash
 			%d = ();
 		}
@@ -188,18 +191,15 @@ sub parse_blasto {
 		($d{'sloe'},$d{'sume'},$d{'ble'},$d{'tbits'},$d{'adjb'}) = ($1,$2,$3,$4,$5)
 			if ($l =~ /^SOLO\sE:([0-9\.e-]+?)\s+SUM\sE:([0-9\.e-]+?)\s+BLAST\sE:([0-9\.e-]+?)\s+TOTAL\sBITS:([0-9\.]+?)\s+ADJ\sBITS:([0-9\.]+?)(\s|$)/);
 
-		#next lines to come is the aln => the hit seq ID is there so need to parse the first one
+		#next lines to come is the aln: query is the first one and subject is the second one
 		if ($d{'sloe'} && substr($l,0,1) =~ /[0-9]/) {
 			my ($seq,$name) = ($1,$2) if ($l =~ /^[0-9]+?\s+?([\w-]+?)\s+?\d+?\s+?(.+?)(\s|$)/);
-			if (! $d{'hspsn'}) {
-				if ($d{'id'} !~ /$name/) {
-					$d{'hspsn'} = $name;
-#					$d{'hspss'} = $seq;
-#				} else {
-#					$d{'hspqn'} = $name;
-#					$d{'hspqs'} = $seq;
-				}
+			if (! $d{'sid'} && $d{'qid'}) {
+				$d{'sid'} = $name; #subject name is the second one
 			} 
+			if (! $d{'qid'}) { 
+				$d{'qid'} = $name; #query name is the first one
+			}
 		}
 		$d{'hspb'} = $1 if ($l =~ /^EXP_HSP_BITS:(.+?)$/);
 		$d{'hspl'} = $1 if ($l =~ /^EXP_HSP_LENGTH:(.+?)$/);
@@ -208,7 +208,7 @@ sub parse_blasto {
 			next;
 		}
 		if (substr($l,0,7) eq "HIT SEQ") {
-			$d{'ss_fl'} = 1;
+			$d{'ss_fl'} = 1;			
 			next;
 		}
 		if ($d{'qs_fl'} && ! $d{'ss_fl'} && $l =~ /^\w/) {
@@ -219,8 +219,16 @@ sub parse_blasto {
 		}
 	}	
 	close $fhi;
-
 	return 1;
+}
+
+#-------------------------------------------------------------------------------
+sub get_cysteins {
+	my $seq = shift;
+	my $aln = $seq;
+	$aln =~ s/[\*a-z]//g;
+	my $cys = () = $aln =~ /C/g;
+	return ($cys,$aln); 
 }
 
 #-------------------------------------------------------------------------------
@@ -228,14 +236,17 @@ sub print_stuff {
 	my $d = shift;
 	my $f = shift;
 	if ($FMT ne "f") {
-		print $FHT "$f\t$d->{'id'}\t$d->{'qs'}\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
+		#get the cysteins
+		my ($cys,$aln) = get_cysteins($d->{'ss'});
+		
+		print $FHT "$f\t$d->{'qid'}\t$d->{'qs'}\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
 		print $FHT "\t$d->{'sloe'}\t$d->{'sume'}\t$d->{'ble'}\t$d->{'tbits'}\t$d->{'adjb'}";
-		print $FHT "\t$d->{'hspsn'}\t$d->{'ss'}";
+		print $FHT "\t$d->{'sid'}\t$d->{'ss'}\t$aln\t$cys";
 		print $FHT "\n";
 	}
 	if ($FMT ne "t") {
 		#fasta of subject sequences - not just the HSPs
-		print $FHF ">$d->{'hspsn'}__$d->{'id'}\t$f\n";
+		print $FHF ">$d->{'qid'}__$d->{'sid'}\t$f\n";
 		print $FHF "$d->{'ss'}\n";
 	}
 	return 1;
