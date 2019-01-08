@@ -8,13 +8,15 @@ use strict;
 use Carp;
 use Getopt::Long;
 
-my $VERSION = "1.1";
+my $VERSION = "1.2";
 my $SCRIPTNAME = "blasto_parse.pl";
 my $CHANGELOG = "
 #  v1.0 = 14 Dec 2018
 #  v1.1 = 07 Jan 2019
 #         Bug fix: query ID was subject ID and the Subject_Name was the query name
 #         Added in tab: alignment sequence & cystein count
+#  v1.2 = 07 Jan 2019
+#         Added superfamily and TPM columns
 \n";
 
 my $USAGE = "\nUsage [$VERSION]: 
@@ -151,7 +153,7 @@ sub prep_out {
 		open (my $fht, ">", $OUT.".tab") or confess "     \nERROR (sub get_files) Failed to open to write $OUT.tab $!\n";
 		print $fht "#FILE\tQUERY_ID\tQUERY_SEQ\tQUERY_LENGTH\tHIT_RANK\tNUM_HSPS";
 		print $fht "\tSOLO_E\tSUM_E\tBLAST_E\tTOTAL_BITS\tADJ_BITS";
-		print $fht "\tSUBJECT_NAME\tSUBJECT_SEQUENCE\tALIGNMENT\tNUMBER_CYSTEINS";
+		print $fht "\tSUBJECT_NAME\tSUPERFAMILY\tTPM\tSUBJECT_SEQUENCE\tALIGNMENT\tNUMBER_CYSTEINS";
 		print $fht "\n";
 		close $fht;
 	}
@@ -223,6 +225,28 @@ sub parse_blasto {
 }
 
 #-------------------------------------------------------------------------------
+sub print_stuff {
+	my $d = shift;
+	my $f = shift;
+	if ($FMT ne "f") {
+		#get the cysteins
+		my ($cys,$aln) = get_cysteins($d->{'ss'});
+		my ($sf,$expr) = get_info_from_header($d->{'id'});
+		
+		print $FHT "$f\t$d->{'qid'}\t$d->{'qs'}\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
+		print $FHT "\t$d->{'sloe'}\t$d->{'sume'}\t$d->{'ble'}\t$d->{'tbits'}\t$d->{'adjb'}";
+		print $FHT "\t$d->{'id'}\t$sf\t$expr\t$d->{'ss'}\t$aln\t$cys";
+		print $FHT "\n";
+	}
+	if ($FMT ne "t") {
+		#fasta of subject sequences - not just the HSPs
+		print $FHF ">$d->{'qid'}__$d->{'id'}\t$f\n";
+		print $FHF "$d->{'ss'}\n";
+	}
+	return 1;
+}
+
+#-------------------------------------------------------------------------------
 sub get_cysteins {
 	my $seq = shift;
 	my $aln = $seq;
@@ -232,24 +256,10 @@ sub get_cysteins {
 }
 
 #-------------------------------------------------------------------------------
-sub print_stuff {
-	my $d = shift;
-	my $f = shift;
-	if ($FMT ne "f") {
-		#get the cysteins
-		my ($cys,$aln) = get_cysteins($d->{'ss'});
-		
-		print $FHT "$f\t$d->{'qid'}\t$d->{'qs'}\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
-		print $FHT "\t$d->{'sloe'}\t$d->{'sume'}\t$d->{'ble'}\t$d->{'tbits'}\t$d->{'adjb'}";
-		print $FHT "\t$d->{'sid'}\t$d->{'ss'}\t$aln\t$cys";
-		print $FHT "\n";
-	}
-	if ($FMT ne "t") {
-		#fasta of subject sequences - not just the HSPs
-		print $FHF ">$d->{'qid'}__$d->{'sid'}\t$f\n";
-		print $FHF "$d->{'ss'}\n";
-	}
-	return 1;
+sub get_info_from_header {
+	my $id = shift;
+	#>lcl|3157MUSICUS.TRINITY_SUPFAM:O1_TPM:2098.22_LEN:116
+	my ($sf,$expr) = ($1,$2) if ($id =~ /_SUPFAM:(.+?)_TPM:(.+?)_/);
+	return ($sf,$expr); 
 }
-
 
