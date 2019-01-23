@@ -224,6 +224,7 @@ sub prep_out {
 		print $fht "\tS_NAME\tS_SUPERFAM";
 		print $fht "\tQ_SEQ\tQ_ALN\tALN_STRING\tS_ALN\tS_SEQ";
 		print $fht "\tCYS_Q_NON-ALN\tCYS_Q_ALN\tCYS_IN-ALN\tCYS_S_ALN\tCYS_S_NON-ALN";
+		print $fht "\tNOTES_AND_OBSERVATIONS";
 		print $fht "\tS_TPM\tQ_LENGTH\tHIT_RANK\tNUM_HSPS";
 		print $fht "\tSOLO_E\tSUM_E\tBLAST_E\tTOTAL_BITS\tADJ_BITS";
 		print $fht "\tALIGNMENT_FULL";
@@ -367,12 +368,11 @@ sub print_stuff {
 		print $FHT "\t$d->{'sid'}\t$sf";
 		print $FHT "\t$d->{'qs'}\t$qa\t$d->{'as'}\t$sa\t$d->{'ss'}";	
 		print $FHT "\t$cqna\t$cqa\t$ca\t$csa\t$csna";
-		print $FHT "\t$expr";
-		print $FHT "\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
+		print $FHT "\t.";
+		print $FHT "\t$expr\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
 		print $FHT "\t$d->{'sloe'}\t$d->{'sume'}\t$d->{'ble'}\t$d->{'tbits'}\t$d->{'adjb'}";
 		$d->{'aln'} =~ s/\t/    /g;
 		print $FHT "\t$d->{'aln'}";
-		
 		#now print footer stuff
 		print $FHT "\t$ft";
 		print $FHT "\n";
