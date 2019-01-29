@@ -9,7 +9,7 @@ use Carp;
 use Getopt::Long;
 use Data::GUID qw(guid);
 
-my $VERSION = "1.3";
+my $VERSION = "1.4";
 my $SCRIPTNAME = "blasto_parse.pl";
 my $CHANGELOG = "
 #  v1.0 = 14 Dec 2018
@@ -24,6 +24,8 @@ my $CHANGELOG = "
 #         Added unique ID (GUID, in base64 representation)
 #         Added more cystein counts
 #         Added alignment block with escaped \\n and full footer
+#  v1.4 = 28 Jan 2019
+#         Added query name and query tag (__ separator in the query fasta header)
 \n";
 
 my $USAGE = "\nUsage [$VERSION]: 
@@ -220,7 +222,8 @@ sub prep_out {
 	if ($FMT ne "f") {
 		open (my $fht, ">", $OUT.".tab") or confess "     \nERROR (sub get_files) Failed to open to write $OUT.tab $!\n";
 		print $fht "#NOTE: Q=QUERY; S=SUBJECT; ALN=ALIGNMENT; SEQ=SEQUENCE; SUPERFAM=SUPERFAMILY\n";
-		print $fht "#UNIQUE_DB_ID_64bits\tQUERY(BLASTO_FILE)\tDATE_PARSED(YEAR.MONTH.DAY)";
+		print $fht "#UNIQUE_DB_ID_64bits\tQUERY(BLASTO_FILE)\tQ_NAME\tQ_TAG";
+		print $fht "\tDATE_PARSED(YEAR.MONTH.DAY)";
 		print $fht "\tS_NAME\tS_SUPERFAM";
 		print $fht "\tQ_SEQ\tQ_ALN\tALN_STRING\tS_ALN\tS_SEQ";
 		print $fht "\tCYS_Q_NON-ALN\tCYS_Q_ALN\tCYS_IN-ALN\tCYS_S_ALN\tCYS_S_NON-ALN";
@@ -363,8 +366,9 @@ sub print_stuff {
 		my ($cqa,$csa,$cqna,$csna,$qa,$sa) = get_cysteins($d->{'qs'},$d->{'ss'});
 		my $ca = () = $d->{'as'} =~ /C/g;
 		my ($sf,$expr) = get_info_from_header($d->{'sid'});
-		
-		print $FHT "$guid\t$f\t$DATE";
+		my ($fn,$ft) = split("__",$f);
+		print $FHT "$guid\t$f\t$fn\t$ft";
+		print $FHT "\t$DATE";
 		print $FHT "\t$d->{'sid'}\t$sf";
 		print $FHT "\t$d->{'qs'}\t$qa\t$d->{'as'}\t$sa\t$d->{'ss'}";	
 		print $FHT "\t$cqna\t$cqa\t$ca\t$csa\t$csna";
