@@ -9,7 +9,7 @@ use Carp;
 use Getopt::Long;
 use Data::GUID qw(guid);
 
-my $VERSION = "1.4";
+my $VERSION = "1.5";
 my $SCRIPTNAME = "blasto_parse.pl";
 my $CHANGELOG = "
 #  v1.0 = 14 Dec 2018
