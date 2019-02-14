@@ -26,6 +26,8 @@ my $CHANGELOG = "
 #         Added alignment block with escaped \\n and full footer
 #  v1.4 = 28 Jan 2019
 #         Added query name and query tag (__ separator in the query fasta header)
+#  v1.5 = 14 Feb 2019
+#         Added space in front of aln string to avoid excel annoyance with the +
 \n";
 
 my $USAGE = "\nUsage [$VERSION]: 
@@ -370,7 +372,7 @@ sub print_stuff {
 		print $FHT "$guid\t$f\t$fn\t$ft";
 		print $FHT "\t$DATE";
 		print $FHT "\t$d->{'sid'}\t$sf";
-		print $FHT "\t$d->{'qs'}\t$qa\t$d->{'as'}\t$sa\t$d->{'ss'}";	
+		print $FHT "\t$d->{'qs'}\t$qa\t $d->{'as'}\t$sa\t$d->{'ss'}";	
 		print $FHT "\t$cqna\t$cqa\t$ca\t$csa\t$csna";
 		print $FHT "\t.";
 		print $FHT "\t$expr\t$d->{'len'}\t$d->{'rank'}\t$d->{'hspc'}";
