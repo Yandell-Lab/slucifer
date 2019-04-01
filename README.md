@@ -10,5 +10,3 @@ perl Build.PL
 ./Build installexes
 ./Build install
 ```
-
-# slucifer
