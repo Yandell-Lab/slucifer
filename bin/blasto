@@ -9,6 +9,7 @@ getopts('h:t:q:d:o:s:m:x:c:a');
 $| = 1;
 use FindBin;
 use lib "$FindBin::Bin/../lib";
+use lib "$FindBin::Bin/../perl/lib";
 
 use PostData;
 use FileHandle;
@@ -22,6 +23,8 @@ use Term::ANSIColor;
 
 
 use constant e  => exp(1);
+
+our $BLAST_COMMAND;
 
 my $usage = "
 
@@ -120,8 +123,10 @@ sub get_blast_dir {
 sub run_blast {
 
 	my $args = get_args();
- 
-	system("$BLAST_DIR/$opt_t $args");
+	#$args .= " -num_descriptions 1 -num_alignments 1 -num_threads 20"; #temp
+	$BLAST_COMMAND = "$BLAST_DIR/$opt_t $args";
+	#print "$BLAST_DIR/$opt_t $args\n"; #temp
+	#temp system("$BLAST_DIR/$opt_t $args") && die $BLAST_COMMAND;
 
 	return $opt_o;
 
@@ -531,6 +536,17 @@ sub get_sumE {
 
 	my $adj = get_adj_bits($hit);
 
+	#if(!$k || !$m || !$n){ #temp
+	#    use Dumpvalue;
+	#    my $dump;
+	#    open(my $fh, '>', \$dump);
+	#    select $fh;
+	#    my $dumper = Dumpvalue->new;
+	#    $dumper->dumpValue($hit);
+	#    close($fh);
+	#    die $dump;
+	#}; #temp
+
 	$EXP_HSP_LEN = int(log($k*$m*$n)/$h);
 
 	return $hit->significance() if $opt_m eq 'd';
@@ -707,7 +723,10 @@ sub prune {
         $l = 3 unless defined $l;
 
         my $pruned;
-        if ($v =~ /e/){
+	if($v eq 'ERROR'){
+	    return 'ERROR';
+	}
+        elsif ($v =~ /e/){
                 my ($x, $y, $z) = $v =~ /(\d)\.?(\d*)(e[\-\+]\d+)$/;
 
                 die "failure in sub prune_precision: $v $x $y $z\n"
