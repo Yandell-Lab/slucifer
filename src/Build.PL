@@ -35,6 +35,7 @@ my $build = App::Build->new(
     requires => {
 	'perl'         => '5.8.0',
 	'Bio::Root::Version'    => '1.006924',
+	'Math::Round'    => '>= 0',
 	#'Other::Module' => '>= 1.2, != 1.5, < 2.0',
     },
     exe_requires => {

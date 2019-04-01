@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Slucifer
 BLAST wrapper to generate higher sensitivity but lower specificity results (off-road BLAST)
 
@@ -10,3 +11,6 @@ perl Build.PL
 ./Build installexes
 ./Build install
 ```
+=======
+# slucifer
+>>>>>>> 4ec936f91da29851d11c6f2816d03e79edbcc824
